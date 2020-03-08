@@ -1,71 +1,77 @@
 package packets
 
+// CNType ...
+type CNType uint16
+
 // CN (Host command and slave req command)
 const (
 	// init cmd
-	HsetTimeoutRepeats = 1000
-	HgetSlaveTime      = 1011
-	SupDate            = 1011
-	HsetSlaveTime      = 1012
-	SsetTimeReq        = 1013
-	HgetRealInterval   = 1061
-	SupRealInterval    = 1061
-	HsetRealInterval   = 1062
-	HgetMinuteInterval = 1063
-	SupMinuteInterval  = 1063
-	HsetMinuteInterval = 1064
-	HsetSlaveRestart   = 1070
-	HresetSlavePasswd  = 1072
+	HsetTimeoutRepeats CNType = 1000
+	HgetSlaveTime      CNType = 1011
+	SupDate            CNType = 1011
+	HsetSlaveTime      CNType = 1012
+	SsetTimeReq        CNType = 1013
+	HgetRealInterval   CNType = 1061
+	SupRealInterval    CNType = 1061
+	HsetRealInterval   CNType = 1062
+	HgetMinuteInterval CNType = 1063
+	SupMinuteInterval  CNType = 1063
+	HsetMinuteInterval CNType = 1064
+	HsetSlaveRestart   CNType = 1070
+	HresetSlavePasswd  CNType = 1072
 	// data cmd
 	// real time data
-	HgetRealTimeData  = 2011
-	SupRealTimeData   = 2011
-	HStopRealTimeData = 2012
+	HgetRealTimeData  CNType = 2011
+	SupRealTimeData   CNType = 2011
+	HStopRealTimeData CNType = 2012
 	// device status
-	HgetDevStat  = 2021
-	SupDevSrat   = 2021
-	HStopDevStat = 2022
+	HgetDevStat  CNType = 2021
+	SupDevSrat   CNType = 2021
+	HStopDevStat CNType = 2022
 	// day data
-	HgetDayHistory           = 2031
-	SupDayHistory            = 2031
-	HgetDevRunTimeDayHistory = 2041
-	SupDevRunTimeDayHistory  = 2041
+	HgetDayHistory           CNType = 2031
+	SupDayHistory            CNType = 2031
+	HgetDevRunTimeDayHistory CNType = 2041
+	SupDevRunTimeDayHistory  CNType = 2041
 	// minute data
-	HgetMinHistory = 2051
-	SupMinHistory  = 2051
+	HgetMinHistory CNType = 2051
+	SupMinHistory  CNType = 2051
 	// hour data
-	HgetHourHistory = 2061
-	SupHourHistory  = 2061
+	HgetHourHistory CNType = 2061
+	SupHourHistory  CNType = 2061
 	// orther data
-	SupSCYupTime = 2081
+	SupSCYupTime CNType = 2081
 	// control cmd
-	HzeroCal      = 3011
-	HrealSampling = 3012
-	HcleanStart   = 3013
-	HcompSampling = 3014
-	HkeepSample   = 3015
+	HzeroCal      CNType = 3011
+	HrealSampling CNType = 3012
+	HcleanStart   CNType = 3013
+	HcompSampling CNType = 3014
+	HkeepSample   CNType = 3015
 	//.....
-	HgetDevID        = 3019
-	SupDevID         = 3019
-	HgetXCJinfo      = 3020
-	SupXCJinfo       = 3020
-	HsetXCJparameter = 3021
+	HgetDevID        CNType = 3019
+	SupDevID         CNType = 3019
+	HgetXCJinfo      CNType = 3020
+	SupXCJinfo       CNType = 3020
+	HsetXCJparameter CNType = 3021
 	// interactive cmd
-	Sresponse   = 9011
-	SexecResult = 9012
-	HnoticeACK  = 9013
-	HdataACK    = 9014
+	Sresponse   CNType = 9011
+	SexecResult CNType = 9012
+	HnoticeACK  CNType = 9013
+	HdataACK    CNType = 9014
+	HGetConfig  CNType = 9017
+	HSetConfig  CNType = 9018
+	SPutConfig  CNType = 9018
 )
 
 // ST
-var systemCodeStr = map[uint16]string{
-	21: "地表水质量监测",
-	22: "空气质量监测",
-	23: "声环境质量监测",
-	31: "大气环境污染源",
-	32: "地表水质污染源",
-	99: "餐饮油烟污染源",
-	91: "系统交互",
+var systemCodeStr = map[string]string{
+	"21": "地表水质量监测",
+	"22": "空气质量监测",
+	"23": "声环境质量监测",
+	"31": "大气环境污染源",
+	"32": "地表水质污染源",
+	"99": "餐饮油烟污染源",
+	"91": "系统交互",
 }
 
 var execResultCodeStr = map[uint16]string{

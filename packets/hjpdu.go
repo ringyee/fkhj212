@@ -1,21 +1,24 @@
 package packets
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	log "github.com/sirupsen/logrus"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // HjPdu .....
 type HjPdu struct {
 	QN   time.Time
-	ST   uint32
-	CN   uint32
+	ST   string
+	CN   CNType
 	PW   string
 	MN   string
 	Flag byte
@@ -24,38 +27,51 @@ type HjPdu struct {
 	CP   CPField
 }
 
-type cpkv map[string]interface{}
+// CPkv CP key value pair
+type CPkv map[string]interface{}
 
-type cpkvg []cpkv
+// CPkvg .....
+type CPkvg []CPkv
 
 // CPField ...
 type CPField struct {
 	DataTime time.Time
-	cpkvg
+	CPkvg
 	NoDTime bool
 }
 
-// NewCPFild   create CPField from map list
-func NewCPFild(dt time.Time, cpkvs ...cpkv) *CPField {
+// NewCPFildFromCPkvs   create CPField from map list
+func NewCPFildFromCPkvs(cpkvs ...CPkv) *CPField {
 	return &CPField{
-		DataTime: dt,
-		cpkvg:    cpkvs,
+		DataTime: time.Now(),
+		CPkvg:    cpkvs,
+	}
+}
+
+// NewCPFildFromCPkvg   create CPField from CPkvg
+func NewCPFildFromCPkvg(cpkvg []CPkv) *CPField {
+	return &CPField{
+		DataTime: time.Now(),
+		CPkvg:    cpkvg,
 	}
 }
 
 func (c *CPField) cpMarshal() (ch string) {
 	ch = "&&"
 	if !c.NoDTime {
-		ch += c.DataTime.Format("DataTime=20060102150405;")
+		c.CPkvg = append(c.CPkvg, CPkv{"DataTime": c.DataTime.Format("20061002150405")})
 	}
-	ch += cpkvg2str(c.cpkvg)
+	ch += cpkvg2str(c.CPkvg)
 	ch += "&&"
 	return
 }
 
 func cp2json(cps string) (jstr string) {
 	patternCp := regexp.MustCompile(`.*CP=&&(.*)&&`)
-	tstr := fmt.Sprintf("%s", patternCp.ReplaceAllString(cps, "${1}"))
+	tstr := patternCp.ReplaceAllString(cps, "${1}")
+	if tstr == "" {
+		return "[]"
+	}
 	splittstr := strings.Split(tstr, ";")
 	if len(splittstr) > 1 {
 		jstr = "["
@@ -77,42 +93,43 @@ func cp2json(cps string) (jstr string) {
 	return
 }
 
-func cpUnMarshal(cpl []interface{}) (cp *CPField) {
+func cpUnMarshal(cps interface{}) (cp *CPField) {
 	cp = new(CPField)
-	var cg []cpkv
+	cp.NoDTime = true
+	var cg []CPkv
+	cpl, ok := cps.([]interface{})
+	if !ok {
+		cpl = []interface{}{cps}
+	}
 	for _, cms := range cpl {
 		if cm, ok := cms.(map[string]interface{}); ok {
 			if dt, ok := cm["DataTime"].(string); ok {
 				if t, err := time.Parse("20060102150405", dt); err == nil {
 					cp.DataTime = t
-				} else {
-					cp.NoDTime = true
+					cp.NoDTime = false
 				}
 			} else {
-				cg = append(cg, cpkv(cm))
+				cg = append(cg, CPkv(cm))
 			}
 		}
 	}
-	cp.cpkvg = cg
+	cp.CPkvg = cg
 	return
 }
 
 // NewHjPdu create HjPdu struct
-// ???????????????????????????????????????????????????????????????
-func NewHjPdu(LocalSet map[string]interface{}, cp CPField) *HjPdu {
+func NewHjPdu(all map[string]interface{}, cp CPField) *HjPdu {
 	hjp := new(HjPdu)
-	hjInit(LocalSet, hjp)
+	hjInit(all, hjp)
 	hjp.CP = cp
 	return hjp
 }
 
-// ???????????????????????????????????????????????????????????????
-
 func (h *HjPdu) marshal() (dh string) {
-	qns := h.QN.Format("QN=20060102150405.999;")
+	qns := h.QN.Format("QN=20060102150405.000;")
 	dh = strings.Replace(qns, ".", "", 1)
-	if h.ST != 0 {
-		dh += fmt.Sprintf("ST=%d;", h.ST)
+	if h.ST != "" {
+		dh += fmt.Sprintf("ST=%s;", h.ST)
 	}
 	if h.CN != 0 {
 		dh += fmt.Sprintf("CN=%d;", h.CN)
@@ -140,8 +157,8 @@ func (h *HjPdu) marshal() (dh string) {
 func (h *HjPdu) Marshal() (hjs string) {
 	df := h.marshal()
 	hlenght := "##" + fmt.Sprintf("%04d", len(df))
-	crc := Crc16Checkout(df)
-	hjs = hlenght + df + fmt.Sprintf("%04x\r\n", crc)
+	crc := Crc16CheckoutStr(df)
+	hjs = hlenght + df + crc + "\r\n"
 	return
 }
 
@@ -151,12 +168,13 @@ func Hj2json(hjpdu []byte) (jstr string) {
 	if lt, err := strconv.Atoi(hjpbs[2:6]); err == nil &&
 		hjpbs[:2] == "##" &&
 		len(hjpbs) == lt+12 &&
-		hjpbs[lt+6:lt+10] == fmt.Sprintf("%04x", Crc16Checkout(hjpbs[6:lt+6])) {
+		(hjpbs[lt+6:lt+10] == fmt.Sprintf("%04x", Crc16Checkout(hjpbs[6:lt+6])) ||
+			hjpbs[lt+6:lt+10] == Crc16CheckoutStr(hjpbs[6:lt+6])) {
 		re := regexp.MustCompile(`(?P<k>\w+)=(?P<v>\w+);(?:CP.*)?`)
-		tstr := fmt.Sprintf("%s", re.ReplaceAllString(hjpbs[6:lt+6], "\"${k}\":\"${v}\","))
+		tstr := re.ReplaceAllString(hjpbs[6:lt+6], "\"${k}\":\"${v}\",")
 		jstr = fmt.Sprintf("{%s\"CP\":%s}", tstr, cp2json(hjpbs[6:lt+6]))
+		log.Debugf("Hj2json ok !")
 	}
-	log.Debugf("Hj2json jstr=%s", jstr)
 	return
 }
 
@@ -168,11 +186,51 @@ func (h *HjPdu) UnMarshal(hjpdu []byte) (err error) {
 	return
 }
 
+// Writeto pdu write to io
+func (h *HjPdu) Writeto(w io.Writer) (i int, err error) {
+	hb := []byte(h.Marshal())
+	//log.Debugf("Pduer writeto func out bytes = % x", hb)
+	log.Infof("Pduer writeto func out string = %s\n", hb)
+	wbuf := bytes.NewBuffer(hb)
+	return w.Write(wbuf.Bytes())
+}
+
+// Unpack get pdu struct from io
+func (h *HjPdu) Unpack(r io.Reader) (err error) {
+	bh := make([]byte, 2)
+	for {
+		var unmb = []byte{'#', '#'}
+		if _, err = io.ReadFull(r, bh); err == nil && bh[0] == '#' && bh[1] == '#' {
+			bl := make([]byte, 4)
+			var lt int
+			if _, err = io.ReadFull(r, bl); err == nil {
+				if lt, err = strconv.Atoi(string(bl)); err == nil {
+					unmb = append(unmb, bl...)
+					bt := make([]byte, lt+6)
+					if _, err = io.ReadFull(r, bt); err == nil {
+						unmb = append(unmb, bt...)
+						log.Debugf("io Unpack func hex pdu: %+v", unmb)
+						if uerr := h.UnMarshal(unmb); uerr != nil {
+							log.Error(uerr)
+							continue
+						}
+						return
+					}
+				}
+			}
+		}
+		if err != nil {
+			log.Error(err)
+			return
+		}
+	}
+}
+
 // UnMarshal ....
 func UnMarshal(hjpdu []byte) (hjp *HjPdu, err error) {
 	hjjstr := Hj2json(hjpdu)
 	if len(hjpdu) == 0 && len(hjjstr) == 0 {
-		err = errors.New("UnMarshal empty hjpdu")
+		err = errors.New("UnMarshal empty pdu")
 		return
 	}
 	hjp = new(HjPdu)
@@ -187,25 +245,35 @@ func UnMarshal(hjpdu []byte) (hjp *HjPdu, err error) {
 func hjInit(tmap map[string]interface{}, hjp *HjPdu) {
 	if qn, ok := tmap["QN"].(string); ok {
 		qn = qn[:14] + "." + qn[14:]
-		if t, err := time.Parse("20060102150405.999", qn); err == nil {
+		if t, err := time.Parse("20060102150405.000", qn); err == nil {
 			hjp.QN = t
 		}
 	}
-	if st, ok := tmap["ST"].(string); ok {
-		if stint, err := strconv.Atoi(st); err == nil {
-			hjp.ST = uint32(stint)
-		}
+	if qn, ok := tmap["QN"].(time.Time); ok {
+		hjp.QN = qn
 	}
+	if st, ok := tmap["ST"].(string); ok {
+		hjp.ST = st
+	}
+	//if st, ok := tmap["ST"].(uint32); ok {
+	//hjp.ST = st
+	//}
 	if cn, ok := tmap["CN"].(string); ok {
 		if stint, err := strconv.Atoi(cn); err == nil {
-			hjp.CN = uint32(stint)
+			hjp.CN = CNType(stint)
 		}
+	}
+	if cn, ok := tmap["CN"].(int); ok {
+		hjp.CN = CNType(cn)
 	}
 	if pw, ok := tmap["PW"].(string); ok {
 		hjp.PW = pw
 	}
 	if mn, ok := tmap["MN"].(string); ok {
 		hjp.MN = mn
+	}
+	if flag, ok := tmap["Flag"].(int); ok {
+		hjp.Flag = uint8(flag)
 	}
 	if flag, ok := tmap["Flag"].(string); ok {
 		if stint, err := strconv.Atoi(flag); err == nil {
@@ -222,10 +290,15 @@ func hjInit(tmap map[string]interface{}, hjp *HjPdu) {
 			hjp.PNO = uint32(stint)
 		}
 	}
-	if cp, ok := tmap["CP"].([]interface{}); ok {
+	if cp, ok := tmap["CP"].(interface{}); ok {
 		hjp.CP = *cpUnMarshal(cp)
 	}
-	return
+}
+
+// Crc16CheckoutStr fkhj212 Crc16CheckoutStr
+func Crc16CheckoutStr(inif interface{}) string {
+	s := Crc16Checkout(inif)
+	return strings.ToUpper(fmt.Sprintf("%04x", s))
 }
 
 // Crc16Checkout fkhj212 Crc16Checkout

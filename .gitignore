@@ -1,0 +1,24 @@
+tags
+# hidden files
+# Vagrant
+Vagrantfile
+# logs
+*.log
+# certs
+certs/
+vendor/
+
+# builds
+dist/
+build/
+internal/message/
+internal/templates/
+docs/public/
+debpackage/opt/*
+gitdebpy/opt/iot/gateway
+*.deb            
+update-sh/*.tgz
+update-sh/iot/*
+update-sh/*.txt
+go.mod
+go.sum

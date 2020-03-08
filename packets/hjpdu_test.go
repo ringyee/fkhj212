@@ -11,58 +11,58 @@ func TestHjPdu(t *testing.T) {
 	Convey("==================测试=====================\n", t, func() {
 		//ts := "QN=20160801085857223;ST=32;CN=1062;PW=100000;MN=010000A8900016F000169DC0;Flag=5;CP=&&RtdInterval=30&&"
 		//fmt.Printf("%x", Crc16Checkout(ts))
-		//fmt.Println(time.Now().Format("20060102150405.99"))
+		fmt.Println(time.Now().Format("20060102150405.000"))
 		////////////////////////////////
-		//cpk := cpkv{"RtdInterval": 30}
-		rtd := cpkv{
+		//cpk := CPkv{"RtdInterval": 30}
+		rtd := CPkv{
 			"006-Rtd": 0.77,
 			"006-ID":  0,
 		}
-		rtd1 := cpkv{
+		rtd1 := CPkv{
 			"006-Rtd": 0.48,
 			"006-ID":  1,
 		}
-		rtd2 := cpkv{
+		rtd2 := CPkv{
 			"007-Rtd": 35,
 			"007-ID":  0,
 		}
-		rtd3 := cpkv{
+		rtd3 := CPkv{
 			"008-Rtd": 36,
 			"008-ID":  0,
 		}
-		rtd4 := cpkv{
+		rtd4 := CPkv{
 			"012-Rtd": 0.00,
 			"012-ID":  1,
 		}
-		rtd5 := cpkv{
+		rtd5 := CPkv{
 			"011-Rtd": 0,
 			"011-ID":  1,
 		}
-		rtd6 := cpkv{
+		rtd6 := CPkv{
 			"012-Rtd": 0.00,
 			"012-ID":  2,
 		}
-		rtd7 := cpkv{
+		rtd7 := CPkv{
 			"011-Rtd": 0,
 			"011-ID":  2,
 		}
-		rtd8 := cpkv{
+		rtd8 := CPkv{
 			"009-Rtd": 0,
 			"009-ID":  0,
 		}
-		rtd9 := cpkv{
+		rtd9 := CPkv{
 			"010-Rtd": 0,
 			"010-ID":  0,
 		}
-		cpf := NewCPFild(time.Now(), rtd, rtd1, rtd2, rtd3, rtd4,
+		cpf := NewCPFildFromCPkvs(rtd, rtd1, rtd2, rtd3, rtd4,
 			rtd5, rtd6, rtd7, rtd8, rtd9)
 		//cpf.NoDTime = true
 		//t.Log(cpf.cpMarshal())
 		//t.Log("% x", []byte(cpf.cpMarshal()))
-		qn, _ := time.Parse("20060102150405.999", "20191217173712.123")
+		qn, _ := time.Parse("20060102150405.999", "20191217173712.120")
 		hjps := &HjPdu{
 			QN:   qn,
-			ST:   99,
+			ST:   "99",
 			CN:   2011,
 			PW:   "123456",
 			MN:   "20181025170013",
@@ -79,6 +79,5 @@ func TestHjPdu(t *testing.T) {
 		uv, _ := UnMarshal([]byte(cpb))
 		fmt.Printf("UnMarshal hjpdu struct = %+v\n\n", *uv)
 		fmt.Printf("hjpdu strct Marshal=%s\n\n", uv.Marshal())
-		fmt.Println("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
 	})
 }

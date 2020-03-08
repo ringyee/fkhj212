@@ -1,18 +1,4 @@
-package fkhj212
-
-/*
- * Copyright (c) 2013 IBM Corp.
- *
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
- *
- * Contributors:
- *    Seth Hoenig
- *    Allan Stockdill-Mander
- *    Mike Robertson
- */
+package clientapp
 
 import (
 	"errors"
@@ -29,10 +15,10 @@ func keepalive(c *client) {
 	var checkInterval int64
 	var pingSent time.Time
 
-	if c.options.KeepAlive > 10 {
-		checkInterval = 5
+	if c.options.KeepAlive > 300 {
+		checkInterval = 300
 	} else {
-		checkInterval = c.options.KeepAlive / 2
+		checkInterval = c.options.KeepAlive
 	}
 
 	intervalTicker := time.NewTicker(time.Duration(checkInterval * int64(time.Second)))
@@ -50,19 +36,17 @@ func keepalive(c *client) {
 			log.Debugln("ping check", time.Since(lastSent).Seconds())
 			if time.Since(lastSent) >= time.Duration(c.options.KeepAlive*int64(time.Second)) || time.Since(lastReceived) >= time.Duration(c.options.KeepAlive*int64(time.Second)) {
 				if atomic.LoadInt32(&c.pingOutstanding) == 0 {
-					log.Debugln("keepalive sending ping")
-					ping := packets.NewHjPdu(map[string]interface{}{"xxxx": "xxxx"}, packets.CPField{})
-					//We don't want to wait behind large messages being sent, the Write call
-					//will block until it it able to send the packet.
+					log.Debugln("keepalive sending time-correct request")
+					timeCorrect := NewPdu(packets.SsetTimeReq, c, packets.CPField{})
 					atomic.StoreInt32(&c.pingOutstanding, 1)
-					ping.Writeto(c.conn)
+					timeCorrect.Writeto(c.conn)
 					c.lastSent.Store(time.Now())
 					pingSent = time.Now()
 				}
 			}
 			if atomic.LoadInt32(&c.pingOutstanding) > 0 && time.Since(pingSent) >= c.options.PingTimeout {
-				log.Infoln("pingresp not received, disconnecting")
-				c.errors <- errors.New("pingresp not received, disconnecting")
+				log.Infoln("keepalive response not received, disconnecting")
+				c.errors <- errors.New("keepalive response not received, disconnecting")
 				return
 			}
 		}

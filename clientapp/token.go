@@ -1,6 +1,7 @@
-package fkhj212
+package clientapp
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -9,7 +10,7 @@ import (
 
 type packetAndToken struct {
 	p packets.Pduer
-	t tokenCompletor
+	t tokenCompleter
 }
 
 // Token defines the interface for the tokens used to indicate when
@@ -20,19 +21,21 @@ type Token interface {
 	Error() error
 }
 
+// TokenErrorSetter ...
 type TokenErrorSetter interface {
 	setError(error)
 }
 
-type tokenCompletor interface {
+type tokenCompleter interface {
 	Token
 	TokenErrorSetter
 	flowComplete()
+	getReCounts() int64
 }
 
 type baseToken struct {
 	m                   sync.RWMutex
-	retransmissionTimes uint8
+	retransmissionTimes int64
 	complete            chan struct{}
 	err                 error
 }
@@ -52,7 +55,9 @@ func (b *baseToken) WaitTimeout(d time.Duration) bool {
 		return true
 	case <-timer.C:
 	}
-
+	b.m.Lock()
+	b.retransmissionTimes++
+	b.m.Unlock()
 	return false
 }
 
@@ -62,6 +67,12 @@ func (b *baseToken) flowComplete() {
 	default:
 		close(b.complete)
 	}
+}
+
+func (b *baseToken) getReCounts() int64 {
+	b.m.RLock()
+	defer b.m.RUnlock()
+	return b.retransmissionTimes
 }
 
 func (b *baseToken) Error() error {
@@ -77,7 +88,7 @@ func (b *baseToken) setError(e error) {
 	b.m.Unlock()
 }
 
-func newToken() tokenCompletor {
+func newToken() tokenCompleter {
 	return &UploadMsgToken{baseToken: baseToken{complete: make(chan struct{})}}
 }
 
@@ -115,4 +126,54 @@ type UploadMsgToken struct {
 // packet when it was sent to the data server
 func (umt *UploadMsgToken) MessageID() uint16 {
 	return umt.messageID
+}
+
+type pduIDs struct {
+	sync.RWMutex
+	index map[string]tokenCompleter
+}
+
+func (ps *pduIDs) cleanUp() {
+	ps.Lock()
+	for _, token := range ps.index {
+		token.setError(fmt.Errorf("Connection lost before send Upload pdu completed"))
+		token.flowComplete()
+	}
+	ps.index = make(map[string]tokenCompleter)
+	ps.Unlock()
+}
+
+func (ps *pduIDs) free(id string) {
+	ps.Lock()
+	if _, ok := ps.index[id]; ok {
+		delete(ps.index, id)
+	}
+	ps.Unlock()
+}
+
+func (ps *pduIDs) claimID(token tokenCompleter, id string) {
+	ps.Lock()
+	defer ps.Unlock()
+	if _, ok := ps.index[id]; !ok {
+		ps.index[id] = token
+	} else {
+		old := ps.index[id]
+		old.flowComplete()
+		ps.index[id] = token
+	}
+}
+
+func (ps *pduIDs) put(id string, t tokenCompleter) {
+	ps.Lock()
+	defer ps.Unlock()
+	ps.index[id] = t
+}
+
+func (ps *pduIDs) getToken(id string) tokenCompleter {
+	ps.RLock()
+	defer ps.RUnlock()
+	if token, ok := ps.index[id]; ok {
+		return token
+	}
+	return nil
 }
