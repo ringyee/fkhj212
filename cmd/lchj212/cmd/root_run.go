@@ -17,11 +17,12 @@ func run(cmd *cobra.Command, args []string) error {
 	tasks := []func() error{
 		setLogLevel,
 		printStartMessage,
-		//setPostgreSQLConnection,
+		setPostgreSQLConnection,
 		setHjClient,
 		chkRestart,
 		readDev,
 		autoUpload,
+		storage,
 	}
 	for _, t := range tasks {
 		if err := t(); err != nil {

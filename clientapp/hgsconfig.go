@@ -27,8 +27,8 @@ type ConfFS struct {
 	ID string  `json:"id"`
 	CI int64   `json:"ci"`
 	UN string  `json:"un"`
-	RL float64 `json:"rl"`
-	RH float64 `json:"rh"`
+	RL float32 `json:"rl"`
+	RH float32 `json:"rh"`
 }
 
 // ConfFactor config and forctor

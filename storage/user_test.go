@@ -13,7 +13,7 @@ import (
 )
 
 func TestUser(t *testing.T) {
-	db, err := sqlx.Open("postgres", "postgres://postgres:yj12345@localhost/postgres?sslmode=disable")
+	db, err := sqlx.Open("postgres", "postgres://postgres:yj12345@2.59.151.166:1932/postgres?sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
 	}

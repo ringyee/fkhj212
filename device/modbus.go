@@ -5,39 +5,49 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/yjiong/fkhj212/clientapp"
 	"github.com/yjiong/fkhj212/packets"
+	"github.com/yjiong/fkhj212/storage"
 	"github.com/yjiong/iotgateway/modbus"
 )
 
 // Dev defined
 var (
-	mrule = mustGetRule()
-	v     = clientapp.GetConf()
-	Dev   *ModbusDev
+	mrule         = mustGetRule()
+	v             = clientapp.GetConf()
+	StoreInterval = getStoreInterval()
+	Dev           *ModbusDev
 )
 
 func init() {
 	Dev = &ModbusDev{}
 }
 
+func getStoreInterval() time.Duration {
+	v.ReadInConfig()
+	val := v.GetInt("StoreInterval")
+	return time.Duration(val) * time.Second
+}
+
 // ModbusDev Modbus device
 type ModbusDev struct {
-	name      string
-	iface     string
-	baudrate  int
-	databits  int
-	parity    string
-	stopbits  int
-	timeout   time.Duration
-	slaveid   byte
-	startaddr uint16
-	quantity  uint16
-	fs        []clientapp.ConfFS
-	rule      *valueRule
-	value     *packets.CPField
+	name        string
+	iface       string
+	baudrate    int
+	databits    int
+	parity      string
+	stopbits    int
+	timeout     time.Duration
+	slaveid     byte
+	startaddr   uint16
+	quantity    uint16
+	fs          []clientapp.ConfFS
+	rule        *valueRule
+	value       *packets.CPField
+	modbusValue []byte
 }
 
 type valueRule struct {
@@ -70,14 +80,13 @@ func mustGetRule() *valueRule {
 
 var deviceFile string
 
-// GetMD .....
+// GetMD ....
 func (m *ModbusDev) GetMD(f clientapp.ConfFactor) (*ModbusDev, error) {
 	//sl := viper.GetStringMapString("modbus")
 	log.Debugf("in new modbus dev")
 	ts := ModbusDev{
-		name:  "",
-		iface: `/dev/ttyS` + f.CO,
-		//iface:     `/dev/ttyUSB0`,
+		name:      "",
+		iface:     `/dev/ttyS` + f.CO,
 		baudrate:  f.BR,
 		databits:  f.DB,
 		parity:    f.PB,
@@ -93,27 +102,18 @@ func (m *ModbusDev) GetMD(f clientapp.ConfFactor) (*ModbusDev, error) {
 	return &ts, nil
 }
 
-// GetCP ......
-func (m *ModbusDev) GetCP() (cp *packets.CPField, err error) {
-	var md []byte
-	if md, err = m.gesmdRet(); err != nil {
+// ReadDev ......
+func (m *ModbusDev) ReadDev() (cp *packets.CPField, err error) {
+	if err = m.gesmdRet(); err != nil {
 		log.Error(errors.WithMessagef(err, "read modbus device at serail prot %s", m.iface))
 		return
 	}
-	m.value, err = m.mdBytes2CPField(md)
+	m.value, err = m.mdBytes2CPField()
+	log.Debugf("ModbusDev ReadDev :value=%v", m.value)
 	return m.value, err
 }
 
-// GetChkMap ......
-func (m *ModbusDev) GetChkMap() (ckv []map[string]interface{}, err error) {
-	var md []byte
-	if md, err = m.gesmdRet(); err != nil {
-		return
-	}
-	return m.getChkMap(md)
-}
-
-func (m *ModbusDev) gesmdRet() (mdret []byte, err error) {
+func (m *ModbusDev) gesmdRet() (err error) {
 	if int(m.quantity)%m.rule.vlength != 0 {
 		err = errors.New("modbus register quantity error")
 		return
@@ -130,7 +130,7 @@ func (m *ModbusDev) gesmdRet() (mdret []byte, err error) {
 	}
 	defer sh.Close()
 	c := modbus.NewClient(sh)
-	mdret, err = c.ReadHoldingRegisters(m.startaddr, m.quantity)
+	m.modbusValue, err = c.ReadHoldingRegisters(m.startaddr, m.quantity)
 	return
 }
 
@@ -150,6 +150,9 @@ func getFloat(results []byte, rule *valueRule) []float32 {
 func (m *ModbusDev) getKVRtdWithID(val []float32) (kvp []packets.CPkv, err error) {
 	key, code := m.keyAndID()
 	id := make([]string, len(key))
+	rh := make([]float32, len(key))
+	rl := make([]float32, len(key))
+
 	if len(key) != len(val) {
 		err = errors.New("modbus value number error")
 		return
@@ -157,6 +160,8 @@ func (m *ModbusDev) getKVRtdWithID(val []float32) (kvp []packets.CPkv, err error
 	for ifs, fs := range m.fs {
 		if fs.NM == key[ifs] {
 			id[ifs] = fs.ID
+			rh[ifs] = fs.RH
+			rl[ifs] = fs.RL
 		}
 	}
 	for i, k := range code {
@@ -165,13 +170,25 @@ func (m *ModbusDev) getKVRtdWithID(val []float32) (kvp []packets.CPkv, err error
 		if len(id[i]) > 0 {
 			kvp[i][k+"-ID"] = fmt.Sprintf("%s", id[i])
 		}
+		//if val[i] < rl[i] {
+		//kvp[i][k+"-Flag"] = "RL"
+		//}
+		//if val[i] > rh[i] {
+		//kvp[i][k+"-Flag"] = "RH"
+		//}
 	}
 	return
 }
 
-func (m *ModbusDev) getChkMap(mdret []byte) (ckv []map[string]interface{}, err error) {
+// GetChkMap ....
+func (m *ModbusDev) GetChkMap() (ckv []map[string]interface{}, err error) {
+	if len(m.modbusValue) != len(mrule.codes)*4 {
+		if _, err = m.ReadDev(); err != nil {
+			return
+		}
+	}
 	ckey, _ := m.keyAndID()
-	fv := getFloat(mdret, m.rule)
+	fv := getFloat(m.modbusValue, m.rule)
 	if len(ckey) != len(fv) {
 		err = errors.New("modbus value number error")
 		return
@@ -193,9 +210,9 @@ func (m *ModbusDev) keyAndID() (chkey, code []string) {
 	return
 }
 
-func (m *ModbusDev) mdBytes2CPField(mdret []byte) (cg *packets.CPField, err error) {
+func (m *ModbusDev) mdBytes2CPField() (cg *packets.CPField, err error) {
 	var cpkvs []packets.CPkv
-	fv := getFloat(mdret, m.rule)
+	fv := getFloat(m.modbusValue, m.rule)
 	cpkvs, err = m.getKVRtdWithID(fv)
 	if err != nil {
 		return
@@ -206,4 +223,29 @@ func (m *ModbusDev) mdBytes2CPField(mdret []byte) (cg *packets.CPField, err erro
 // GetValue ....
 func (m *ModbusDev) GetValue() packets.CPField {
 	return *m.value
+}
+
+// StoreVal ....
+func (m *ModbusDev) StoreVal(db sqlx.Ext) (err error) {
+	if len(m.modbusValue) != len(mrule.codes)*4 {
+		if _, err = m.ReadDev(); err != nil {
+			return
+		}
+	}
+	fv := getFloat(m.modbusValue, m.rule)
+	f := &storage.Factors{
+		ValueTimeStamp: m.value.DataTime,
+		DeviceID:       fmt.Sprintf("%s-%d", m.iface, m.slaveid),
+		Value1:         float64(fv[0]),
+		Value2:         float64(fv[1]),
+		Value3:         float64(fv[2]),
+		Value4:         float64(fv[3]),
+		Value5:         float64(fv[4]),
+		Value6:         float64(fv[5]),
+		Value7:         float64(fv[6]),
+		Value8:         float64(fv[7]),
+		Value9:         float64(fv[8]),
+		Value10:        float64(fv[9]),
+	}
+	return storage.InsertFactorValue(db, f)
 }

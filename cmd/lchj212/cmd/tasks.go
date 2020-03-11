@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/yjiong/fkhj212/clientapp"
 	"github.com/yjiong/fkhj212/device"
@@ -25,11 +26,17 @@ func printStartMessage() error {
 
 func setPostgreSQLConnection() error {
 	log.Info("connecting to postgresql")
-	//db, err := storage.OpenDatabase(config.C.PostgreSQL.DSN)
-	//if err != nil {
-	//return errors.Wrap(err, "database connection error")
-	//}
-	//config.C.PostgreSQL.DB = db
+	db = nil
+	pdb, err := sqlx.Open("postgres", "postgres://postgres:xxxxxxxx@localhost/postgres?sslmode=disable")
+	if err != nil {
+		log.Error(err)
+	} else {
+		if err := pdb.Ping(); err != nil {
+			log.Error(err)
+		} else {
+			db = pdb
+		}
+	}
 	return nil
 }
 
@@ -85,7 +92,7 @@ func readDev() error {
 	go func() {
 		for {
 			for _, dev := range devs {
-				dev.GetCP()
+				dev.ReadDev()
 			}
 			<-time.After(2 * time.Second)
 		}
@@ -104,6 +111,19 @@ func autoUpload() error {
 			}
 		}(dc)
 	}
+	return nil
+}
+
+func storage() error {
+	interval := time.NewTicker(device.StoreInterval)
+	go func() {
+		for {
+			<-interval.C
+			for _, dev := range devs {
+				dev.StoreVal(db)
+			}
+		}
+	}()
 	return nil
 }
 
@@ -129,6 +149,7 @@ func connect(c clientapp.Fkhjer) {
 
 var clients []clientapp.Fkhjer
 var devs []*device.ModbusDev
+var db sqlx.Ext
 
 //func setRedisPool() error {
 //log.Info("setup redis connection pool")

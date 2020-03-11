@@ -25,6 +25,9 @@ PingTimeout: 15
 # 出样时间间隔(秒)
 #Stime: 240
 # 因子代码(格式为:名称-代码)
+# 存储间隔(秒)
+StoreInterval: 60
+
 Modbus:
     KeyCode:
         - 油烟-006
