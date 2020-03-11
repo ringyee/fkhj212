@@ -120,7 +120,9 @@ func storage() error {
 		for {
 			<-interval.C
 			for _, dev := range devs {
-				dev.StoreVal(db)
+				if db != nil {
+					dev.StoreVal(db)
+				}
 			}
 		}
 	}()
